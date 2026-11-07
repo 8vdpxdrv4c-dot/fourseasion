@@ -278,17 +278,17 @@ function boot(): void {
     const radius = 5.15;
     const distH = (radius / Math.tan(vFov / 2)) * (height / usableH);
     const distW = (radius / Math.tan(hFov / 2)) * (width / usableW);
-    const dist = Math.max(distH, distW) * (width < 840 ? 0.88 : 0.73);
-    controls.minDistance = dist * 0.7;
-    controls.maxDistance = dist * 1.22;
+    const framed = Math.max(distH, distW) * (width < 840 ? 0.88 : 0.73) * (params.has('near') ? 0.36 : 1);
+    controls.minDistance = framed * 0.7;
+    controls.maxDistance = framed * 1.22;
     const usableCenter = top + usableH / 2;
     const shift = usableCenter - height / 2;
     camera.setViewOffset(width, height, 0, shift, width, height);
     camera.updateProjectionMatrix();
     if (!userMoved) {
-      const polar = 0.98;
-      camera.position.set(0, Math.cos(polar) * dist, Math.sin(polar) * dist);
-      controls.target.set(0, 0.12, 0.15);
+      const polar = params.has('near') ? 1.08 : 0.98;
+      camera.position.set(0, Math.cos(polar) * framed, Math.sin(polar) * framed);
+      controls.target.set(0, params.has('near') ? 0.55 : 0.12, params.has('near') ? 0.95 : 0.15);
       camera.lookAt(controls.target);
     } else {
       const offset = camera.position.clone().sub(controls.target);
@@ -340,7 +340,7 @@ function boot(): void {
     islandRoot.position.y = bob;
     island.update(sweep, shaderTime, ambientMotion);
     foliage.update(sweep, shaderTime, ambientMotion);
-    characters.update(sweep, shaderTime, ambientMotion);
+    characters.update(sweep, shaderTime, ambientMotion, dt, reduced);
     atmosphere.update(dt, sweep, ambientMotion);
     controls.update();
     if (composer) composer.render();
@@ -428,6 +428,7 @@ function boot(): void {
       ui.setSpeed(speed);
     },
     getFrontSeason: () => frontSeason(sweep),
+    getCompanion: () => characters.companion(),
     getAzimuth: () => controls.getAzimuthalAngle(),
     getPolar: () => controls.getPolarAngle(),
     getDistance: () => camera.position.distanceTo(controls.target),
@@ -437,7 +438,7 @@ function boot(): void {
 
   fit();
   foliage.update(sweep, 0, false);
-  characters.update(sweep, 0, false);
+  characters.update(sweep, 0, false, 0, reduced);
   atmosphere.update(0, sweep, false);
   requestAnimationFrame(() => {
     api.ready = true;
