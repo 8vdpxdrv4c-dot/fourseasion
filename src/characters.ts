@@ -10,10 +10,15 @@ import {
   SphereGeometry,
   TorusGeometry,
 } from 'three';
+import {
+  COMPANION_LEFT as LEFT,
+  COMPANION_RIGHT as RIGHT,
+  companionJumpScale,
+  companionTriggerAngle,
+  createJumpState,
+  stepCompanionJump,
+} from './companionJump';
 import { seasonSample, seasonWeight, WORLD } from './season';
-
-const LEFT = { x: -0.4, z: 1.22 };
-const RIGHT = { x: 0.38, z: 1.16 };
 
 const CLOTH_LEFT = [
   new Color('#7eadd4'),
@@ -92,9 +97,20 @@ function eye(x: number, y: number, z: number): Eye {
   return { white, pupil };
 }
 
+export type CompanionHop = {
+  angle: number;
+  y: number;
+  scaleY: number;
+  jumping: boolean;
+  jumps: number;
+  leftY: number;
+  rightY: number;
+};
+
 export type Characters = {
   group: Group;
-  update: (sweep: number, time: number, motion: boolean) => void;
+  update: (sweep: number, time: number, motion: boolean, dt?: number, reduced?: boolean) => void;
+  companion: () => CompanionHop;
 };
 
 export function createCharacters(): Characters {
@@ -234,10 +250,24 @@ export function createCharacters(): Characters {
   group.add(clasp);
 
   const eyes = [eyeL, eyeR, eyeSL, eyeSR];
+  const jump = createJumpState();
+  const trigger = companionTriggerAngle();
+  let pose = { y: 0, scaleY: 1 };
 
   return {
     group,
-    update(sweep, time, motion) {
+    companion() {
+      return {
+        angle: trigger,
+        y: pose.y,
+        scaleY: pose.scaleY,
+        jumping: jump.elapsed >= 0,
+        jumps: jump.jumps,
+        leftY: left.position.y,
+        rightY: right.position.y,
+      };
+    },
+    update(sweep, time, motion, dt = 0, reduced = false) {
       mixSeason(leftClothMat.color, CLOTH_LEFT, LEFT.x, LEFT.z, sweep);
       mixSeason(scarfMat.color, SCARF, LEFT.x, LEFT.z, sweep);
       mixSeason(rightClothMat.color, CLOTH_RIGHT, RIGHT.x, RIGHT.z, sweep);
@@ -259,9 +289,18 @@ export function createCharacters(): Characters {
       petal.visible = spring > 0.12;
       petal.scale.set(1.1, 0.45, 0.7).multiplyScalar(0.35 + 0.65 * spring);
 
+      pose = stepCompanionJump(jump, sweep, dt, reduced, trigger);
+      const scale = companionJumpScale(pose.scaleY);
+      left.scale.set(scale.x, scale.y, scale.z);
+      right.scale.set(scale.x, scale.y, scale.z);
       const bob = motion ? Math.sin(time * 1.55) * 0.02 : 0;
-      left.position.y = WORLD.surfaceY + bob;
-      right.position.y = WORLD.surfaceY + (motion ? Math.sin(time * 1.55 + 0.45) * 0.02 : 0);
+      const bobRight = motion ? Math.sin(time * 1.55 + 0.45) * 0.02 : 0;
+      left.position.y = WORLD.surfaceY + bob + pose.y;
+      right.position.y = WORLD.surfaceY + bobRight + pose.y;
+      clasp.position.y = WORLD.surfaceY + 0.4 + pose.y + 0.4 * (pose.scaleY - 1);
+      const lift = Math.max(0, pose.y);
+      const shade = 1 / (1 + lift * 1.6);
+      shadow.scale.set(1.15 * shade, 0.02, 0.72 * shade);
       left.rotation.y = 0.28 + (motion ? Math.sin(time * 0.6) * 0.04 : 0);
       right.rotation.y = -0.32 - (motion ? Math.sin(time * 0.6) * 0.04 : 0);
 
