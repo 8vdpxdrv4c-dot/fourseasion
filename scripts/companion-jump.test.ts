@@ -11,11 +11,11 @@ import {
 import { TAU } from '../src/season.ts';
 
 const trigger = companionTriggerAngle();
-const right = Math.atan2(0.38, -1.16);
-const left = Math.atan2(-0.4, -1.22);
+const right = Math.atan2(0.38, -3.06);
+const left = Math.atan2(-0.4, -3.12);
 const wrap = (a: number) => ((a % TAU) + TAU) % TAU;
 
-assert.ok(trigger > 2.7 && trigger < 3.0, `trigger ${trigger} should be the leading companion`);
+assert.ok(trigger > 2.9 && trigger < 3.3, `trigger ${trigger} should be the leading companion`);
 assert.ok(Math.abs(trigger - wrap(right)) < 1e-9, 'hand meets the right figure first');
 assert.ok(wrap(left) > trigger, 'left figure is later along the sweep');
 

@@ -143,7 +143,7 @@ float terrainHeight(vec2 xz) {
   float r = length(xz);
   float edge = smoothstep(3.85, 4.58, r);
   float hub = smoothstep(1.05, 0.2, r);
-  float couple = smoothstep(1.2, 0.28, length(xz - vec2(0.0, 1.28)));
+  float couple = smoothstep(0.7, 0.2, length(xz - vec2(0.0, 3.12)));
   h *= (1.0 - edge) * (1.0 - hub * 0.9) * (1.0 - couple);
   h += sin(clamp(r / 4.72, 0.0, 1.0) * 3.14159265) * 0.022;
   return h;
@@ -160,6 +160,10 @@ vec3 terrainColor(vec2 xz) {
   float spark = smoothstep(0.78, 1.0, sin(uTime * 2.4 + tw * 36.0) * 0.5 + 0.5);
   gSparkle = spark * step(0.93, tw) * gSnow;
 
+  float soil = seasonNoise(xz * 2.15);
+  float grit = seasonNoise(xz * 8.4 + 4.0);
+  albedo = mix(albedo * vec3(0.62, 0.5, 0.36), albedo, 0.48 + soil * 0.52);
+  albedo *= 0.9 + grit * 0.18;
   float rings = abs(fract(length(xz) * 1.35) - 0.5);
   float groove = smoothstep(0.07, 0.0, rings);
   albedo = mix(albedo, albedo * 0.86, groove * 0.16 * smoothstep(1.1, 2.4, length(xz)));
@@ -204,15 +208,23 @@ vec3 gWorld;
 #else
   gWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
 #endif
-float wWinter = seasonWeightIndex(gWorld.xz, 3.0);
+float wSpring = seasonWeightIndex(gWorld.xz, 0.0);
+float wSummer = seasonWeightIndex(gWorld.xz, 1.0);
 float wAutumn = seasonWeightIndex(gWorld.xz, 2.0);
-float hScale = mix(1.0, 0.7, wAutumn);
-hScale = mix(hScale, 0.08, wWinter);
+float wWinter = seasonWeightIndex(gWorld.xz, 3.0);
+float hScale = 0.74 * wSpring + 1.06 * wSummer + 0.56 * wAutumn + 0.06 * wWinter;
+hScale = max(hScale, 0.045);
 transformed.y *= hScale;
 float tip = uv.y * uv.y;
-float amp = mix(0.22, 0.015, wWinter);
-transformed.x += sin(uTime * 1.45 + aPhase + gWorld.x * 0.45) * tip * amp;
-transformed.z += cos(uTime * 1.15 + aPhase * 1.37 + gWorld.z * 0.4) * tip * amp;
+vec2 world = gWorld.xz;
+float gust = sin(uTime * 0.7 + world.x * 0.16 + world.y * 0.13);
+float gust2 = sin(uTime * 0.28 + world.x * 0.06 - world.y * 0.05);
+float flutter = sin(uTime * 2.25 + aPhase + world.x * 1.5);
+float amp = (0.5 + 0.5 * gust2) * (0.12 * wSpring + 0.2 * wSummer + 0.08 * wAutumn + 0.012 * wWinter);
+float bend = max(aBend, 0.35);
+transformed.x += (gust * 0.7 + flutter * 0.3) * tip * amp * bend;
+transformed.z += (gust2 * 0.62 + cos(uTime * 1.7 + aPhase) * 0.28) * tip * amp * bend;
+transformed.z += tip * 0.045 * bend;
 #ifdef USE_INSTANCING
   vSeasonWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 #else
@@ -227,11 +239,15 @@ diffuseColor.rgb *= terrainColor(vSeasonWorld.xz);
 
 const GRASS_FRAG = /* glsl */ `
 #include <color_fragment>
-float halfW = mix(0.5, 0.045, pow(max(vBladeUv.y, 0.0), 0.8));
+float along = pow(max(vBladeUv.y, 0.0), 0.72);
+float halfW = mix(0.48, 0.035, along);
 if (abs(vBladeUv.x - 0.5) > halfW) discard;
 gSnow = 0.0;
 gSparkle = 0.0;
-diffuseColor.rgb *= grassColor(vSeasonWorld.xz, vBladeUv.y);
+vec3 meadow = grassColor(vSeasonWorld.xz, vBladeUv.y);
+vec3 root = meadow * vec3(0.38, 0.42, 0.24);
+vec3 tip = meadow * vec3(1.18, 1.24, 0.78);
+diffuseColor.rgb *= mix(root, tip, along);
 `;
 
 const ROUGH_FRAG = /* glsl */ `
@@ -267,7 +283,7 @@ export function bindTerrain(material: MeshStandardMaterial): void {
       .replace('#include <roughnessmap_fragment>', ROUGH_FRAG)
       .replace('#include <emissivemap_fragment>', EMISSIVE_FRAG);
   };
-  material.customProgramCacheKey = () => 'season-terrain-v4';
+  material.customProgramCacheKey = () => 'season-terrain-v5';
 }
 
 export function bindGrass(material: MeshStandardMaterial): void {
@@ -276,7 +292,7 @@ export function bindGrass(material: MeshStandardMaterial): void {
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
-        `#include <common>\n${SEASON_LIB}\nvarying vec3 vSeasonWorld;\nvarying vec2 vBladeUv;\nattribute float aPhase;\n`,
+        `#include <common>\n${SEASON_LIB}\nvarying vec3 vSeasonWorld;\nvarying vec2 vBladeUv;\nattribute float aPhase;\nattribute float aBend;\n`,
       )
       .replace('#include <begin_vertex>', GRASS_VERT);
     shader.fragmentShader = shader.fragmentShader
@@ -288,7 +304,27 @@ export function bindGrass(material: MeshStandardMaterial): void {
       .replace('#include <roughnessmap_fragment>', ROUGH_FRAG)
       .replace('#include <emissivemap_fragment>', EMISSIVE_FRAG);
   };
-  material.customProgramCacheKey = () => 'season-grass-v4';
+  material.customProgramCacheKey = () => 'season-grass-v5';
+}
+
+export function bindTreeWind(material: MeshStandardMaterial): void {
+  material.onBeforeCompile = (shader) => {
+    assignUniforms(shader);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${SEASON_LIB}\n`)
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vec4 windWorld = modelMatrix * vec4(transformed, 1.0);
+        float canopy = max(position.y, 0.0);
+        float gust = sin(uTime * 1.12 + windWorld.x * 0.32 + windWorld.z * 0.21);
+        float rustle = sin(uTime * 2.55 + windWorld.x * 1.25 + position.y * 2.4);
+        float bend = (gust * 0.04 + rustle * 0.011) * canopy * canopy;
+        transformed.x += bend;
+        transformed.z += cos(uTime * 0.86 + windWorld.z * 0.37) * 0.026 * canopy * canopy;`,
+      );
+  };
+  material.customProgramCacheKey = () => 'tree-wind-v1';
 }
 
 export const SKY_VERT = /* glsl */ `
