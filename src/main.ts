@@ -11,6 +11,7 @@ import {
   Scene,
   SRGBColorSpace,
   Vector2,
+  Vector3,
   WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -161,7 +162,7 @@ function boot(): void {
   const atmosphere = createAtmosphere(quality);
   const islandRoot = island.group;
   islandRoot.add(foliage.group, characters.group, atmosphere.particles);
-  scene.add(atmosphere.sky, atmosphere.stars, islandRoot);
+  scene.add(atmosphere.sky, atmosphere.stars, atmosphere.meteors, islandRoot);
 
   let composer: EffectComposer | null = null;
   let bloom: UnrealBloomPass | null = null;
@@ -256,6 +257,7 @@ function boot(): void {
   }
 
   let shaderTime = 0;
+  let holdClock = false;
   let lastTick = performance.now();
   let frame = 0;
   let stopped = false;
@@ -278,18 +280,36 @@ function boot(): void {
     const radius = 5.15;
     const distH = (radius / Math.tan(vFov / 2)) * (height / usableH);
     const distW = (radius / Math.tan(hFov / 2)) * (width / usableW);
-    const framed = Math.max(distH, distW) * (width < 840 ? 0.88 : 0.73) * (params.has('near') ? 0.36 : 1);
-    controls.minDistance = framed * 0.7;
-    controls.maxDistance = framed * 1.22;
+    const focus = params.get('focus');
+    const framed = Math.max(distH, distW) * (width < 840 ? 0.88 : 0.73) * (params.has('near') || focus ? 0.42 : 1);
+    controls.minDistance = focus ? framed * 0.22 : framed * 0.7;
+    controls.maxDistance = framed * 1.35;
     const usableCenter = top + usableH / 2;
     const shift = usableCenter - height / 2;
     camera.setViewOffset(width, height, 0, shift, width, height);
     camera.updateProjectionMatrix();
     if (!userMoved) {
-      const polar = params.has('near') ? 1.08 : 0.98;
-      camera.position.set(0, Math.cos(polar) * framed, Math.sin(polar) * framed);
-      controls.target.set(0, params.has('near') ? 0.55 : 0.12, params.has('near') ? 0.95 : 0.15);
-      camera.lookAt(controls.target);
+      if (focus === 'tree') {
+        const tx = Math.sin(1.5) * 3.55;
+        const tz = -Math.cos(1.5) * 3.55;
+        controls.target.set(tx, 0.85, tz);
+        camera.position.set(tx + 1.15, 1.55, tz + 1.7);
+      } else if (focus === 'grass') {
+        controls.target.set(1.15, 0.12, 2.15);
+        camera.position.set(1.35, 0.72, 3.05);
+      } else if (params.has('near') || focus === 'pair') {
+        controls.minDistance = 1.4;
+        controls.maxDistance = 8;
+        camera.position.set(0.15, 2.45, 5.85);
+        controls.target.set(0, 0.72, 2.9);
+        camera.lookAt(controls.target);
+      } else {
+        const polar = 0.98;
+        camera.position.set(0, Math.cos(polar) * framed, Math.sin(polar) * framed);
+        controls.target.set(0, 0.12, 0.15);
+        camera.lookAt(controls.target);
+      }
+      if (focus === 'tree' || focus === 'grass') camera.lookAt(controls.target);
     } else {
       const offset = camera.position.clone().sub(controls.target);
       const len = Math.min(controls.maxDistance, Math.max(controls.minDistance, offset.length()));
@@ -308,7 +328,7 @@ function boot(): void {
     const dt = Math.min((now - lastTick) / 1000, 0.05);
     lastTick = now;
     const ambientMotion = playing || !reduced;
-    if (ambientMotion) shaderTime += dt;
+    if (ambientMotion && !holdClock) shaderTime += dt;
 
     if (seek) {
       seek.t += dt / seek.dur;
@@ -341,7 +361,7 @@ function boot(): void {
     island.update(sweep, shaderTime, ambientMotion);
     foliage.update(sweep, shaderTime, ambientMotion);
     characters.update(sweep, shaderTime, ambientMotion, dt, reduced);
-    atmosphere.update(dt, sweep, ambientMotion);
+    atmosphere.update(dt, sweep, ambientMotion, shaderTime, reduced);
     controls.update();
     if (composer) composer.render();
     else renderer.render(scene, camera);
@@ -429,6 +449,18 @@ function boot(): void {
     },
     getFrontSeason: () => frontSeason(sweep),
     getCompanion: () => characters.companion(),
+    getClock: () => shaderTime,
+    setClock: (value: number) => {
+      shaderTime = value;
+    },
+    setHoldClock: (value: boolean) => {
+      holdClock = value;
+    },
+    getSky: () => atmosphere.skyState(),
+    project: (x: number, y: number, z: number) => {
+      const v = new Vector3(x, y, z).project(camera);
+      return [v.x, v.y, v.z];
+    },
     getAzimuth: () => controls.getAzimuthalAngle(),
     getPolar: () => controls.getPolarAngle(),
     getDistance: () => camera.position.distanceTo(controls.target),
@@ -439,7 +471,7 @@ function boot(): void {
   fit();
   foliage.update(sweep, 0, false);
   characters.update(sweep, 0, false, 0, reduced);
-  atmosphere.update(0, sweep, false);
+  atmosphere.update(0, sweep, false, 0, reduced);
   requestAnimationFrame(() => {
     api.ready = true;
   });

@@ -6,6 +6,7 @@ import {
   Group,
   InstancedBufferAttribute,
   InstancedMesh,
+  Matrix4,
   Mesh,
   NormalBlending,
   Object3D,
@@ -14,10 +15,12 @@ import {
   ShaderMaterial,
   SphereGeometry,
   BackSide,
+  DoubleSide,
   Vector3,
 } from 'three';
 import { mulberry32 } from './random';
 import { TAU, seasonSample, seasonWeight } from './season';
+import { METEOR_COUNT, meteorShot, showerActive } from './showers';
 import {
   PARTICLE_FRAG,
   PARTICLE_VERT,
@@ -51,8 +54,10 @@ export type Atmosphere = {
   sky: Mesh;
   stars: Points;
   particles: Group;
-  update: (dt: number, sweep: number, motion: boolean) => void;
+  meteors: Group;
+  update: (dt: number, sweep: number, motion: boolean, time?: number, reduced?: boolean) => void;
   setPixelRatio: (value: number) => void;
+  skyState: () => { shower: boolean; active: number };
 };
 
 export function createAtmosphere(counts: { stars: number; debris: number; fireflies: number }): Atmosphere {
@@ -121,17 +126,117 @@ export function createAtmosphere(counts: { stars: number; debris: number; firefl
   const fireflies = createPool(counts.fireflies, true, 91);
   const particles = new Group();
   particles.add(debris.mesh, fireflies.mesh);
+  const meteors = createMeteors();
 
   return {
     sky,
     stars,
     particles,
+    meteors: meteors.group,
     setPixelRatio(value: number) {
       pixelRatio.value = value;
     },
-    update(dt, sweep, motion) {
+    skyState() {
+      return meteors.state;
+    },
+    update(dt, sweep, motion, time = 0, reduced = false) {
       stepPool(debris, dt, sweep, motion, false);
       stepPool(fireflies, dt, sweep, motion, true);
+      meteors.update(time, reduced);
+    },
+  };
+}
+
+const METEOR_PATHS = [
+  { from: [-6.4, 3.05, -1.4], to: [6.2, 2.15, -5.6] },
+  { from: [5.8, 3.55, 0.8], to: [-5.2, 2.35, -5.2] },
+  { from: [-1.2, 3.9, 1.6], to: [3.8, 2.55, -5.8] },
+  { from: [6.8, 2.7, -2.2], to: [-5.8, 2.05, -4.2] },
+  { from: [-6.6, 3.35, 0.2], to: [2.4, 2.25, -5.4] },
+];
+
+function createMeteors(): {
+  group: Group;
+  update: (time: number, reduced: boolean) => void;
+  state: { shower: boolean; active: number };
+} {
+  const group = new Group();
+  group.renderOrder = -1;
+  const dir = new Vector3();
+  const pos = new Vector3();
+  const side = new Vector3();
+  const normal = new Vector3();
+  const view = new Vector3(0, 0.35, 1);
+  const basis = new Matrix4();
+  const shots = METEOR_PATHS.slice(0, METEOR_COUNT).map((path) => {
+    const material = new ShaderMaterial({
+      uniforms: { uLife: { value: 0 } },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform float uLife;
+        void main() {
+          float along = vUv.y;
+          float across = pow(smoothstep(0.5, 0.04, abs(vUv.x - 0.5)), 1.7);
+          float head = smoothstep(0.88, 1.0, along);
+          float trail = smoothstep(0.0, 0.42, along) * (1.0 - smoothstep(0.7, 0.98, along));
+          float life = sin(clamp(uLife, 0.0, 1.0) * 3.14159265);
+          float alpha = across * (trail * 0.5 + head * 0.95) * life;
+          if (alpha < 0.025) discard;
+          vec3 col = mix(vec3(0.62, 0.76, 1.0), vec3(1.0, 0.97, 0.88), head);
+          gl_FragColor = vec4(col * (0.85 + head * 0.7), alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      blending: AdditiveBlending,
+      toneMapped: false,
+      side: DoubleSide,
+    });
+    const mesh = new Mesh(new PlaneGeometry(0.22, 5.6), material);
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    mesh.renderOrder = -1;
+    group.add(mesh);
+    return {
+      mesh,
+      material,
+      from: new Vector3(...path.from),
+      to: new Vector3(...path.to),
+    };
+  });
+  const state: { shower: boolean; active: number; points: number[][] } = { shower: false, active: 0, points: [] };
+  return {
+    group,
+    state,
+    update(time, reduced) {
+      let active = 0;
+      shots.forEach((shot, index) => {
+        const fly = meteorShot(time, index, reduced);
+        shot.mesh.visible = fly.active;
+        shot.material.uniforms.uLife.value = fly.u;
+        if (!fly.active) return;
+        active += 1;
+        pos.copy(shot.from).lerp(shot.to, fly.u);
+        dir.copy(shot.to).sub(shot.from).normalize();
+        side.crossVectors(dir, view);
+        if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+        side.normalize();
+        normal.crossVectors(side, dir).normalize();
+        basis.makeBasis(side, dir, normal);
+        shot.mesh.position.copy(pos);
+        shot.mesh.quaternion.setFromRotationMatrix(basis);
+      });
+      state.shower = showerActive(time, reduced);
+      state.active = active;
+      state.points = shots.filter((shot) => shot.mesh.visible).map((shot) => shot.mesh.position.toArray());
     },
   };
 }

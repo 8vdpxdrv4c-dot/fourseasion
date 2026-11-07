@@ -10,13 +10,14 @@ import {
   SphereGeometry,
   TorusGeometry,
 } from 'three';
+import { lerpPose, playFrame, standPose, type FigurePose, type PlayBeat } from './companionPlay';
 import {
   COMPANION_LEFT as LEFT,
   COMPANION_RIGHT as RIGHT,
   companionJumpScale,
-  companionTriggerAngle,
-  createJumpState,
-  stepCompanionJump,
+  createHandGate,
+  pairWedge,
+  stepHandHop,
 } from './companionJump';
 import { seasonSample, seasonWeight, WORLD } from './season';
 
@@ -97,6 +98,27 @@ function eye(x: number, y: number, z: number): Eye {
   return { white, pupil };
 }
 
+function makeHeart(): Group {
+  const heart = new Group();
+  const mat = new MeshBasicMaterial({
+    color: new Color('#f3a0b8'),
+    transparent: true,
+    opacity: 0.88,
+    depthWrite: false,
+  });
+  const lobe = new Mesh(new SphereGeometry(0.045, 10, 8), mat);
+  lobe.position.set(-0.028, 0.02, 0);
+  const lobeR = lobe.clone();
+  lobeR.position.x = 0.028;
+  const tip = new Mesh(new SphereGeometry(0.04, 8, 6), mat);
+  tip.scale.set(0.85, 1.15, 0.7);
+  tip.position.set(0, -0.035, 0);
+  heart.add(lobe, lobeR, tip);
+  heart.visible = false;
+  heart.renderOrder = 2;
+  return heart;
+}
+
 export type CompanionHop = {
   angle: number;
   y: number;
@@ -105,6 +127,13 @@ export type CompanionHop = {
   jumps: number;
   leftY: number;
   rightY: number;
+  leftX: number;
+  leftZ: number;
+  rightX: number;
+  rightZ: number;
+  beat: PlayBeat;
+  heart: number;
+  separation: number;
 };
 
 export type Characters = {
@@ -113,10 +142,12 @@ export type Characters = {
   companion: () => CompanionHop;
 };
 
+type Arm = { mesh: Mesh; baseZ: number };
+
 export function createCharacters(): Characters {
   const group = new Group();
   const shadow = blobShadow();
-  shadow.position.set(0, WORLD.surfaceY + 0.01, 1.2);
+  shadow.position.set(0, WORLD.surfaceY + 0.01, (LEFT.z + RIGHT.z) * 0.5);
   shadow.scale.set(1.15, 0.02, 0.72);
   group.add(shadow);
 
@@ -140,30 +171,32 @@ export function createCharacters(): Characters {
   bodyL.position.y = 0.36;
   bodyL.castShadow = true;
   left.add(bodyL);
+  const headLPivot = new Group();
+  headLPivot.position.y = 0.74;
   const headL = new Mesh(new SphereGeometry(0.29, 24, 18), skin);
-  headL.position.y = 0.78;
+  headL.position.y = 0.04;
   headL.castShadow = true;
-  left.add(headL);
+  headLPivot.add(headL);
   const hair = new Mesh(new SphereGeometry(0.3, 22, 14), hairMat);
   hair.scale.set(1.02, 0.62, 1.02);
-  hair.position.y = 0.93;
+  hair.position.y = 0.19;
   hair.castShadow = true;
-  left.add(hair);
+  headLPivot.add(hair);
   const bangs = new Mesh(new SphereGeometry(0.2, 16, 10), hairMat);
   bangs.scale.set(1.15, 0.42, 0.55);
-  bangs.position.set(0, 0.9, 0.16);
-  left.add(bangs);
-  const eyeL = eye(-0.1, 0.78, 0.25);
-  const eyeR = eye(0.1, 0.78, 0.25);
-  left.add(eyeL.white, eyeR.white);
+  bangs.position.set(0, 0.16, 0.16);
+  headLPivot.add(bangs);
+  const eyeL = eye(-0.1, 0.04, 0.25);
+  const eyeR = eye(0.1, 0.04, 0.25);
+  headLPivot.add(eyeL.white, eyeR.white);
   const mouthL = new Mesh(
     new TorusGeometry(0.045, 0.008, 6, 10, Math.PI),
     new MeshBasicMaterial({ color: new Color('#c47a74') }),
   );
   mouthL.rotation.x = Math.PI;
   mouthL.rotation.z = Math.PI;
-  mouthL.position.set(0, 0.68, 0.27);
-  left.add(mouthL);
+  mouthL.position.set(0, -0.06, 0.27);
+  headLPivot.add(mouthL);
   const scarf = new Mesh(new TorusGeometry(0.2, 0.045, 8, 16), scarfMat);
   scarf.rotation.x = Math.PI / 2.4;
   scarf.position.y = 0.56;
@@ -172,8 +205,8 @@ export function createCharacters(): Characters {
   scarfTail.position.set(0.12, 0.42, 0.08);
   scarfTail.rotation.z = 0.5;
   left.add(scarfTail);
-  addArm(left, -0.3, 0.4, 0.8, leftClothMat);
-  addArm(left, 0.22, 0.36, -1.15, leftClothMat);
+  const armLOut = addArm(left, -0.3, 0.4, 0.8, leftClothMat);
+  const armLIn = addArm(left, 0.22, 0.36, -1.15, leftClothMat);
   addFoot(left, -0.1, shoeMat);
   addFoot(left, 0.1, shoeMat);
   const straw = new Group();
@@ -184,12 +217,13 @@ export function createCharacters(): Characters {
   crown.scale.set(1, 0.45, 1);
   crown.position.y = 0.08;
   straw.add(crown);
-  straw.position.y = 1.05;
-  left.add(straw);
+  straw.position.y = 0.31;
+  headLPivot.add(straw);
   const snowL = new Mesh(new SphereGeometry(0.16, 12, 8), snowMat);
   snowL.scale.set(1.1, 0.42, 1);
-  snowL.position.y = 1.05;
-  left.add(snowL);
+  snowL.position.y = 0.31;
+  headLPivot.add(snowL);
+  left.add(headLPivot);
   group.add(left);
 
   const right = new Group();
@@ -199,85 +233,144 @@ export function createCharacters(): Characters {
   bodyR.position.y = 0.34;
   bodyR.castShadow = true;
   right.add(bodyR);
+  const headRPivot = new Group();
+  headRPivot.position.set(0, 0.72, 0.02);
   const hood = new Mesh(new SphereGeometry(0.33, 22, 16), hoodMat);
-  hood.position.y = 0.8;
+  hood.position.y = 0.08;
   hood.castShadow = true;
-  right.add(hood);
+  headRPivot.add(hood);
   const face = new Mesh(new SphereGeometry(0.24, 22, 16), skin);
-  face.position.set(0, 0.76, 0.1);
+  face.position.set(0, 0.04, 0.08);
   face.castShadow = true;
-  right.add(face);
-  const eyeSL = eye(-0.08, 0.78, 0.3);
-  const eyeSR = eye(0.08, 0.78, 0.3);
+  headRPivot.add(face);
+  const eyeSL = eye(-0.08, 0.06, 0.28);
+  const eyeSR = eye(0.08, 0.06, 0.28);
   eyeSL.white.scale.set(0.72, 0.72, 0.6);
   eyeSR.white.scale.set(0.72, 0.72, 0.6);
-  right.add(eyeSL.white, eyeSR.white);
+  headRPivot.add(eyeSL.white, eyeSR.white);
   const blushL = new Mesh(new SphereGeometry(0.04, 8, 6), blushMat);
   blushL.scale.set(1.2, 0.7, 0.4);
-  blushL.position.set(-0.12, 0.7, 0.3);
+  blushL.position.set(-0.12, -0.02, 0.28);
   const blushR = blushL.clone();
   blushR.position.x = 0.12;
-  right.add(blushL, blushR);
+  headRPivot.add(blushL, blushR);
   const mouthR = new Mesh(
     new TorusGeometry(0.035, 0.007, 6, 8, Math.PI),
     new MeshBasicMaterial({ color: new Color('#d48984') }),
   );
   mouthR.rotation.z = Math.PI;
-  mouthR.position.set(0, 0.68, 0.32);
-  right.add(mouthR);
-  addArm(right, 0.28, 0.38, -0.85, rightClothMat);
-  addArm(right, -0.2, 0.34, 1.2, rightClothMat);
-  addFoot(right, -0.09, shoeMat);
-  addFoot(right, 0.09, shoeMat);
+  mouthR.position.set(0, -0.04, 0.3);
+  headRPivot.add(mouthR);
   const snowR = new Mesh(new SphereGeometry(0.18, 12, 8), snowMat);
   snowR.scale.set(1.15, 0.38, 1.05);
-  snowR.position.y = 1.02;
-  right.add(snowR);
+  snowR.position.y = 0.3;
+  headRPivot.add(snowR);
   const leaf = new Mesh(new SphereGeometry(0.07, 8, 6), leafMat);
   leaf.scale.set(1.3, 0.45, 0.7);
-  leaf.position.set(0.22, 0.98, 0.05);
+  leaf.position.set(0.22, 0.26, 0.03);
   leaf.rotation.z = 0.6;
-  right.add(leaf);
+  headRPivot.add(leaf);
   const petal = new Mesh(new SphereGeometry(0.055, 8, 6), petalMat);
   petal.scale.set(1.1, 0.45, 0.7);
-  petal.position.set(-0.18, 0.98, 0.08);
+  petal.position.set(-0.18, 0.26, 0.06);
   petal.rotation.z = -0.4;
-  right.add(petal);
+  headRPivot.add(petal);
+  right.add(headRPivot);
+  const armROut = addArm(right, 0.28, 0.38, -0.85, rightClothMat);
+  const armRIn = addArm(right, -0.2, 0.34, 1.2, rightClothMat);
+  addFoot(right, -0.09, shoeMat);
+  addFoot(right, 0.09, shoeMat);
   group.add(right);
 
-  const clasp = new Mesh(new SphereGeometry(0.055, 10, 8), skin);
-  clasp.position.set(0.0, WORLD.surfaceY + 0.4, 1.28);
+  const clasp = new Mesh(new SphereGeometry(0.045, 10, 8), skin);
+  clasp.position.set(0, WORLD.surfaceY + 0.42, 3.14);
+  clasp.visible = false;
   group.add(clasp);
 
+  const heart = makeHeart();
+  group.add(heart);
+
   const eyes = [eyeL, eyeR, eyeSL, eyeSR];
-  const jump = createJumpState();
-  const trigger = companionTriggerAngle();
+  const gate = createHandGate();
   let pose = { y: 0, scaleY: 1 };
+  let playBlend = 1;
+  let beat: PlayBeat = 'rest';
+  let heartAmount = 0;
+  let separation = 0.8;
+  const homeLeft = standPose(-1);
+  const homeRight = standPose(1);
+
+  function applyFigure(
+    figure: Group,
+    head: Group,
+    inner: Arm,
+    outer: Arm,
+    figurePose: FigurePose,
+    bob: number,
+  ): void {
+    figure.position.set(figurePose.x, WORLD.surfaceY + bob + figurePose.hop + pose.y, figurePose.z);
+    figure.rotation.y = figurePose.rotY;
+    figure.rotation.z = figurePose.lean;
+    head.rotation.y = figurePose.headYaw;
+    head.rotation.x = figurePose.headPitch;
+    inner.mesh.rotation.z = inner.baseZ + figurePose.armIn;
+    inner.mesh.rotation.x = figurePose.armIn * -0.2;
+    outer.mesh.rotation.z = outer.baseZ + figurePose.armOut * 0.35;
+    outer.mesh.rotation.x = figurePose.armOut * 0.25;
+  }
 
   return {
     group,
     companion() {
+      const wedge = pairWedge(
+        { x: left.position.x, z: left.position.z },
+        { x: right.position.x, z: right.position.z },
+      );
       return {
-        angle: trigger,
+        angle: wedge.start,
         y: pose.y,
         scaleY: pose.scaleY,
-        jumping: jump.elapsed >= 0,
-        jumps: jump.jumps,
+        jumping: gate.elapsed >= 0,
+        jumps: gate.jumps,
         leftY: left.position.y,
         rightY: right.position.y,
+        leftX: left.position.x,
+        leftZ: left.position.z,
+        rightX: right.position.x,
+        rightZ: right.position.z,
+        beat,
+        heart: heartAmount,
+        separation,
       };
     },
     update(sweep, time, motion, dt = 0, reduced = false) {
-      mixSeason(leftClothMat.color, CLOTH_LEFT, LEFT.x, LEFT.z, sweep);
-      mixSeason(scarfMat.color, SCARF, LEFT.x, LEFT.z, sweep);
-      mixSeason(rightClothMat.color, CLOTH_RIGHT, RIGHT.x, RIGHT.z, sweep);
-      mixSeason(hoodMat.color, HOOD, RIGHT.x, RIGHT.z, sweep);
+      const raw = playFrame(time, reduced);
+      if (reduced) playBlend = 0;
+      else if (gate.elapsed >= 0) playBlend = Math.max(0, playBlend - Math.min(dt, 0.05) / 0.18);
+      else playBlend = Math.min(1, playBlend + Math.min(Math.max(dt, 0), 0.05) / 0.32);
 
-      const summer = seasonWeight(seasonSample(LEFT.x, LEFT.z, sweep), 1);
-      const winterL = seasonWeight(seasonSample(LEFT.x, LEFT.z, sweep), 3);
-      const winterR = seasonWeight(seasonSample(RIGHT.x, RIGHT.z, sweep), 3);
-      const autumn = seasonWeight(seasonSample(RIGHT.x, RIGHT.z, sweep), 2);
-      const spring = seasonWeight(seasonSample(RIGHT.x, RIGHT.z, sweep), 0);
+      const shownLeft = reduced ? raw.left : lerpPose(homeLeft, raw.left, playBlend);
+      const shownRight = reduced ? raw.right : lerpPose(homeRight, raw.right, playBlend);
+      beat = reduced || gate.elapsed >= 0 ? 'rest' : raw.beat;
+      heartAmount = reduced ? 0 : raw.heart * playBlend;
+      separation = Math.hypot(shownLeft.x - shownRight.x, shownLeft.z - shownRight.z);
+
+      const wedge = pairWedge(shownLeft, shownRight);
+      pose = stepHandHop(gate, sweep, dt, reduced, wedge);
+      const scale = companionJumpScale(pose.scaleY);
+      left.scale.set(scale.x, scale.y, scale.z);
+      right.scale.set(scale.x, scale.y, scale.z);
+
+      mixSeason(leftClothMat.color, CLOTH_LEFT, shownLeft.x, shownLeft.z, sweep);
+      mixSeason(scarfMat.color, SCARF, shownLeft.x, shownLeft.z, sweep);
+      mixSeason(rightClothMat.color, CLOTH_RIGHT, shownRight.x, shownRight.z, sweep);
+      mixSeason(hoodMat.color, HOOD, shownRight.x, shownRight.z, sweep);
+
+      const summer = seasonWeight(seasonSample(shownLeft.x, shownLeft.z, sweep), 1);
+      const winterL = seasonWeight(seasonSample(shownLeft.x, shownLeft.z, sweep), 3);
+      const winterR = seasonWeight(seasonSample(shownRight.x, shownRight.z, sweep), 3);
+      const autumn = seasonWeight(seasonSample(shownRight.x, shownRight.z, sweep), 2);
+      const spring = seasonWeight(seasonSample(shownRight.x, shownRight.z, sweep), 0);
       straw.visible = summer > 0.12;
       straw.scale.setScalar(0.35 + 0.65 * summer);
       snowL.visible = winterL > 0.12;
@@ -289,38 +382,47 @@ export function createCharacters(): Characters {
       petal.visible = spring > 0.12;
       petal.scale.set(1.1, 0.45, 0.7).multiplyScalar(0.35 + 0.65 * spring);
 
-      pose = stepCompanionJump(jump, sweep, dt, reduced, trigger);
-      const scale = companionJumpScale(pose.scaleY);
-      left.scale.set(scale.x, scale.y, scale.z);
-      right.scale.set(scale.x, scale.y, scale.z);
-      const bob = motion ? Math.sin(time * 1.55) * 0.02 : 0;
-      const bobRight = motion ? Math.sin(time * 1.55 + 0.45) * 0.02 : 0;
-      left.position.y = WORLD.surfaceY + bob + pose.y;
-      right.position.y = WORLD.surfaceY + bobRight + pose.y;
-      clasp.position.y = WORLD.surfaceY + 0.4 + pose.y + 0.4 * (pose.scaleY - 1);
+      const bob = motion && playBlend < 0.35 ? Math.sin(time * 1.55) * 0.015 : 0;
+      const bobRight = motion && playBlend < 0.35 ? Math.sin(time * 1.55 + 0.45) * 0.015 : 0;
+      applyFigure(left, headLPivot, armLIn, armLOut, shownLeft, bob);
+      applyFigure(right, headRPivot, armRIn, armROut, shownRight, bobRight);
+
+      const midX = (shownLeft.x + shownRight.x) * 0.5;
+      const midZ = (shownLeft.z + shownRight.z) * 0.5;
       const lift = Math.max(0, pose.y);
       const shade = 1 / (1 + lift * 1.6);
-      shadow.scale.set(1.15 * shade, 0.02, 0.72 * shade);
-      left.rotation.y = 0.28 + (motion ? Math.sin(time * 0.6) * 0.04 : 0);
-      right.rotation.y = -0.32 - (motion ? Math.sin(time * 0.6) * 0.04 : 0);
+      shadow.position.set(midX, WORLD.surfaceY + 0.01, midZ);
+      shadow.scale.set(1.35 * shade, 0.02, 0.78 * shade);
 
-      const blink = motion && time % 4.2 < 0.12;
+      const hugging = raw.beat === 'hug' && playBlend > 0.55 && pose.y < 0.08;
+      clasp.visible = hugging;
+      clasp.position.set(midX, WORLD.surfaceY + 0.42 + pose.y, midZ + 0.08);
+
+      heart.visible = heartAmount > 0.08;
+      heart.position.set(midX, WORLD.surfaceY + 1.28 + pose.y + (shownLeft.hop + shownRight.hop) * 0.5, midZ + 0.02);
+      heart.scale.setScalar(heartAmount * 2.4);
+      const heartMat = heart.children[0] as Mesh | undefined;
+      if (heartMat && !Array.isArray(heartMat.material)) {
+        heartMat.material.opacity = 0.35 + heartAmount * 0.55;
+      }
+
+      const blink = motion && !reduced && time % 4.2 < 0.12;
       for (const item of eyes) {
         item.white.scale.y = blink ? 0.12 : item === eyeSL || item === eyeSR ? 0.72 : 1.05;
       }
-
-      const look = motion ? Math.sin(time * 0.45) * 0.01 : 0;
+      const look = motion && !reduced ? Math.sin(time * 0.45) * 0.008 : 0;
       for (const item of eyes) item.pupil.position.x = look;
     },
   };
 }
 
-function addArm(parent: Group, x: number, y: number, rotZ: number, material: MeshStandardMaterial): void {
-  const arm = new Mesh(new CapsuleGeometry(0.055, 0.2, 3, 6), material);
-  arm.position.set(x, y, 0.04);
-  arm.rotation.z = rotZ;
-  arm.castShadow = true;
-  parent.add(arm);
+function addArm(parent: Group, x: number, y: number, rotZ: number, material: MeshStandardMaterial): Arm {
+  const mesh = new Mesh(new CapsuleGeometry(0.055, 0.2, 3, 6), material);
+  mesh.position.set(x, y, 0.04);
+  mesh.rotation.z = rotZ;
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return { mesh, baseZ: rotZ };
 }
 
 function addFoot(parent: Group, x: number, material: MeshStandardMaterial): void {

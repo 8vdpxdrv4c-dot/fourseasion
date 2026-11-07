@@ -32,7 +32,11 @@ async function open(url, features) {
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
   await page.waitForFunction(() => window.__turntable?.ready === true, { timeout: 20000 });
-  await new Promise((r) => setTimeout(r, 250));
+  await page.evaluate(() => {
+    window.__turntable.setHoldClock(true);
+    window.__turntable.setClock(0);
+  });
+  await new Promise((r) => setTimeout(r, 200));
   return { page, logs };
 }
 

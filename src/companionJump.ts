@@ -1,8 +1,9 @@
+import { COMPANION_HOME } from './companionPlay';
 import { TAU, diskAngle, wrapAngle } from './season';
 
-/** Near-front pair. The golden hand advances with disk angle and meets the right figure first. */
-export const COMPANION_LEFT = { x: -0.4, z: 1.22 };
-export const COMPANION_RIGHT = { x: 0.38, z: 1.16 };
+/** Front-edge pair. The golden hand advances with disk angle and meets the right figure first. */
+export const COMPANION_LEFT = COMPANION_HOME.left;
+export const COMPANION_RIGHT = COMPANION_HOME.right;
 
 /** Matches the sweep unwind in the render loop (four-season periods). */
 const UNWIND = TAU * 4;
@@ -113,6 +114,88 @@ export function stepCompanionJump(state: JumpState, sweep: number, dt: number, r
     }
   }
   state.previousSweep = sweep;
+
+  if (reduced) {
+    state.elapsed = -1;
+    state.pending = false;
+    return { y: 0, scaleY: 1 };
+  }
+
+  if (state.elapsed >= 0) {
+    state.elapsed += Math.min(Math.max(dt, 0), 0.05);
+    if (state.elapsed >= COMPANION_JUMP_DURATION) {
+      if (state.pending) {
+        state.pending = false;
+        state.elapsed = 0;
+        state.jumps += 1;
+      } else {
+        state.elapsed = -1;
+      }
+    }
+  }
+
+  if (state.elapsed < 0) return { y: 0, scaleY: 1 };
+  return companionJumpPose(state.elapsed);
+}
+
+export type HandGate = JumpState & { inside: boolean };
+
+export function createHandGate(): HandGate {
+  return { previousSweep: null, elapsed: -1, pending: false, jumps: 0, inside: false };
+}
+
+/** Angular wedge covering wherever the pair currently stands, plus a small margin. */
+export function pairWedge(
+  left: { x: number; z: number },
+  right: { x: number; z: number },
+  margin = 0.07,
+): { start: number; length: number } {
+  const a = wrapAngle(diskAngle(left.x, left.z));
+  const b = wrapAngle(diskAngle(right.x, right.z));
+  const forward = wrapAngle(b - a);
+  const start = forward <= Math.PI ? a : b;
+  const span = forward <= Math.PI ? forward : wrapAngle(a - b);
+  return {
+    start: wrapAngle(start - margin),
+    length: Math.min(1.15, span + margin * 2),
+  };
+}
+
+export function handInsideWedge(sweep: number, wedge: { start: number; length: number }): boolean {
+  return wrapAngle(sweep - wedge.start) <= wedge.length + 1e-4;
+}
+
+/**
+ * One hop when the moving hand enters the pair's current wedge.
+ * A stationary hand, even if the pair walks onto it, does not retrigger.
+ */
+export function stepHandHop(
+  state: HandGate,
+  sweep: number,
+  dt: number,
+  reduced: boolean,
+  wedge: { start: number; length: number },
+): JumpPose {
+  const nowInside = handInsideWedge(sweep, wedge);
+  let entered = false;
+  if (state.previousSweep !== null && !reduced) {
+    const delta = sweepDelta(state.previousSweep, sweep);
+    if (delta > 1e-5 && !state.inside) {
+      const dist = wrapAngle(wedge.start - wrapAngle(state.previousSweep));
+      entered = (dist > 1e-4 && dist <= delta + 1e-4) || nowInside;
+    }
+  }
+  state.inside = nowInside;
+  state.previousSweep = sweep;
+
+  if (entered) {
+    if (state.elapsed < 0) {
+      state.elapsed = 0;
+      state.jumps += 1;
+    } else {
+      state.pending = true;
+    }
+  }
 
   if (reduced) {
     state.elapsed = -1;
