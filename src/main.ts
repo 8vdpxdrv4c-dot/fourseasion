@@ -75,9 +75,12 @@ function boot(): void {
   let playing = !reduced;
   if (params.has('pause')) playing = false;
   if (params.get('play') === '1') playing = true;
+  const minSpeed = 0.25;
+  const maxSpeed = 5;
+  const clampSpeed = (value: number): number => Math.min(maxSpeed, Math.max(minSpeed, value));
   let speed = Number(params.get('speed') ?? '1');
   if (!Number.isFinite(speed)) speed = 1;
-  speed = Math.min(2.5, Math.max(0.25, speed));
+  speed = clampSpeed(speed);
 
   let sweep = TAU * 0.94;
   const sweepRaw = params.get('sweep');
@@ -185,7 +188,7 @@ function boot(): void {
     },
     onSeason: (index) => beginSeek(index),
     onSpeed: (value) => {
-      speed = value;
+      speed = clampSpeed(value);
       ui.setSpeed(speed);
     },
     onFullscreen: () => {
@@ -385,10 +388,10 @@ function boot(): void {
     } else if (event.key === 'f' || event.key === 'F') {
       toggleFullscreen().catch(() => undefined);
     } else if (event.key === '[') {
-      speed = Math.max(0.25, Math.round((speed - 0.25) * 20) / 20);
+      speed = Math.max(minSpeed, Math.round((speed - 0.25) * 20) / 20);
       ui.setSpeed(speed);
     } else if (event.key === ']') {
-      speed = Math.min(2.5, Math.round((speed + 0.25) * 20) / 20);
+      speed = Math.min(maxSpeed, Math.round((speed + 0.25) * 20) / 20);
       ui.setSpeed(speed);
     }
   }
@@ -444,7 +447,7 @@ function boot(): void {
     },
     getSpeed: () => speed,
     setSpeed: (value: number) => {
-      speed = Math.min(2.5, Math.max(0.25, value));
+      speed = clampSpeed(value);
       ui.setSpeed(speed);
     },
     getFrontSeason: () => frontSeason(sweep),

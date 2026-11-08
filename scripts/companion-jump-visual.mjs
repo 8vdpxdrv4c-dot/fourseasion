@@ -113,7 +113,7 @@ try {
   const fast = await open(`${BASE}/?pause=1&nobloom&sweep=${(angle - 0.55).toFixed(4)}`);
   report.errors.push(...fast.logs);
   await fast.page.evaluate(() => {
-    window.__turntable.setSpeed(2.5);
+    window.__turntable.setSpeed(5);
     window.__turntable.setPlaying(true);
   });
   await fast.page.waitForFunction(() => window.__turntable.getCompanion().jumps >= 1, { timeout: 12000, polling: 'raf' });
