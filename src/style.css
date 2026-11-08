@@ -229,14 +229,6 @@ input[type="range"]::-moz-range-thumb {
   font-variant-numeric: tabular-nums;
 }
 
-.hint {
-  margin: 0;
-  pointer-events: none;
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  color: rgba(219, 232, 245, 0.62);
-}
-
 button:focus,
 input:focus { outline: none; }
 
@@ -261,7 +253,6 @@ input:focus-visible {
 @media (max-width: 720px) {
   .top { padding-left: 12px; padding-right: 12px; }
   h1 { letter-spacing: 0.015em; }
-  .hint { display: none; }
   .speed input { width: 88px; }
 }
 
