@@ -78,11 +78,11 @@ try {
   const s1 = await probe.page.evaluate(() => window.__turntable.getSweep());
   await new Promise((r) => setTimeout(r, 1600));
   const d1 = (await probe.page.evaluate(() => window.__turntable.getSweep())) - s1;
-  await probe.page.evaluate(() => window.__turntable.setSpeed(2.5));
+  await probe.page.evaluate(() => window.__turntable.setSpeed(5));
   const s2 = await probe.page.evaluate(() => window.__turntable.getSweep());
   await new Promise((r) => setTimeout(r, 1600));
   const d2 = (await probe.page.evaluate(() => window.__turntable.getSweep())) - s2;
-  report.checks.speed = { d1, d2, faster: d2 > d1 * 1.6 };
+  report.checks.speed = { d1, d2, faster: d2 > d1 * 3.2 };
 
   await probe.page.click('#play');
   await new Promise((r) => setTimeout(r, 350));
