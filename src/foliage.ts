@@ -9,7 +9,6 @@ import {
   Float32BufferAttribute,
   Group,
   IcosahedronGeometry,
-  InstancedBufferAttribute,
   InstancedMesh,
   Matrix4,
   Mesh,
@@ -30,7 +29,7 @@ import {
   seasonSample,
   seasonWeight,
 } from './season';
-import { bindGrass, bindTreeWind } from './shaders';
+import { bindTreeWind } from './shaders';
 
 export type FoliageQuality = {
   grass: number;
@@ -251,29 +250,6 @@ function smoothstep(t: number): number {
   return x * x * (3 - 2 * x);
 }
 
-function hash2(x: number, z: number): number {
-  const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
-  return n - Math.floor(n);
-}
-
-function valueNoise(x: number, z: number): number {
-  const x0 = Math.floor(x);
-  const z0 = Math.floor(z);
-  const fx = x - x0;
-  const fz = z - z0;
-  const ux = fx * fx * (3 - 2 * fx);
-  const uz = fz * fz * (3 - 2 * fz);
-  const a = hash2(x0, z0);
-  const b = hash2(x0 + 1, z0);
-  const c = hash2(x0, z0 + 1);
-  const d = hash2(x0 + 1, z0 + 1);
-  return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz;
-}
-
-function fieldNoise(x: number, z: number): number {
-  return valueNoise(x, z) * 0.55 + valueNoise(x * 2.1 + 4, z * 2.1) * 0.3 + valueNoise(x * 4.2, z * 4.2 + 2) * 0.15;
-}
-
 export type Foliage = {
   group: Group;
   update: (sweep: number, time: number, motion: boolean) => void;
@@ -314,72 +290,7 @@ export function createFoliage(quality: FoliageQuality): Foliage {
     };
   });
 
-  const bladeHeight = 0.5;
-  const grassGeo = new PlaneGeometry(0.075, bladeHeight, 1, 4);
-  const bladePos = grassGeo.getAttribute('position');
-  for (let i = 0; i < bladePos.count; i += 1) {
-    const y = bladePos.getY(i) + bladeHeight * 0.5;
-    const along = Math.min(1, Math.max(0, y / bladeHeight));
-    bladePos.setX(i, bladePos.getX(i) * (1 - along * 0.78));
-    bladePos.setZ(i, along * along * 0.07);
-  }
-  grassGeo.translate(0, bladeHeight * 0.5, 0);
-  grassGeo.computeVertexNormals();
-  const rng = mulberry32(2026);
-  const phases = new Float32Array(quality.grass);
-  const bends = new Float32Array(quality.grass);
-  const grass = new InstancedMesh(
-    grassGeo,
-    (() => {
-      const mat = new MeshStandardMaterial({
-        color: new Color('#ffffff'),
-        roughness: 0.92,
-        metalness: 0,
-        side: DoubleSide,
-      });
-      bindGrass(mat);
-      return mat;
-    })(),
-    quality.grass,
-  );
   const dummy = new Object3D();
-  const exclusions = [
-    { x: 0, z: 3.1, r: 0.4 },
-    { x: 0, z: 0, r: 0.48 },
-    { x: 0.82, z: 1.78, r: 0.38 },
-  ];
-  let placed = 0;
-  let guard = 0;
-  while (placed < quality.grass && guard < quality.grass * 18) {
-    guard += 1;
-    const rad = Math.sqrt(rng()) * 4.45;
-    const ang = rng() * TAU;
-    const x = Math.sin(ang) * rad;
-    const z = -Math.cos(ang) * rad;
-    if (rad < 0.55) continue;
-    if (exclusions.some((item) => Math.hypot(x - item.x, z - item.z) < item.r)) continue;
-    const clump = fieldNoise(x * 1.7, z * 1.7);
-    if (clump < 0.36 && rng() > 0.28) continue;
-    phases[placed] = rng() * TAU;
-    bends[placed] = 0.62 + rng() * 0.7;
-    dummy.position.set(x, WORLD.surfaceY - 0.012, z);
-    dummy.rotation.set((rng() - 0.5) * 0.35, rng() * TAU, (rng() - 0.5) * 0.28);
-    const lush = 0.45 + clump * 0.85;
-    const height = lush * (0.55 + rng() * 0.7);
-    const width = 0.55 + rng() * 0.7;
-    dummy.scale.set(width, height, 1);
-    dummy.updateMatrix();
-    grass.setMatrixAt(placed, dummy.matrix);
-    placed += 1;
-  }
-  grass.count = placed;
-  grassGeo.setAttribute('aPhase', new InstancedBufferAttribute(phases, 1));
-  grassGeo.setAttribute('aBend', new InstancedBufferAttribute(bends, 1));
-  grass.instanceMatrix.needsUpdate = true;
-  grass.frustumCulled = false;
-  grass.castShadow = false;
-  grass.receiveShadow = false;
-  group.add(grass);
 
   const flowers = makeDecals(
     buildFlower(),
