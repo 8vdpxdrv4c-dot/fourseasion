@@ -23,6 +23,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { createAtmosphere } from './atmosphere';
 import { createCharacters } from './characters';
 import { createFoliage } from './foliage';
+import { createIslandGrass } from './terrainGrassTiles';
 import { createIsland } from './island';
 import {
   TAU,
@@ -161,10 +162,11 @@ function boot(): void {
 
   const island = createIsland({ rings: quality.rings, segments: quality.segments });
   const foliage = createFoliage(quality);
+  const grass = createIslandGrass({ narrow });
   const characters = createCharacters();
   const atmosphere = createAtmosphere(quality);
   const islandRoot = island.group;
-  islandRoot.add(foliage.group, characters.group, atmosphere.particles);
+  islandRoot.add(foliage.group, grass.group, characters.group, atmosphere.particles);
   scene.add(atmosphere.sky, atmosphere.stars, atmosphere.meteors, islandRoot);
 
   let composer: EffectComposer | null = null;
@@ -363,6 +365,7 @@ function boot(): void {
     islandRoot.position.y = bob;
     island.update(sweep, shaderTime, ambientMotion);
     foliage.update(sweep, shaderTime, ambientMotion);
+    grass.update(dt, shaderTime, sweep, camera, ambientMotion);
     characters.update(sweep, shaderTime, ambientMotion, dt, reduced);
     atmosphere.update(dt, sweep, ambientMotion, shaderTime, reduced);
     controls.update();
@@ -473,6 +476,7 @@ function boot(): void {
 
   fit();
   foliage.update(sweep, 0, false);
+  grass.update(0, 0, sweep, camera, false);
   characters.update(sweep, 0, false, 0, reduced);
   atmosphere.update(0, sweep, false, 0, reduced);
   requestAnimationFrame(() => {
@@ -495,6 +499,7 @@ function boot(): void {
       if (Array.isArray(mesh.material)) mesh.material.forEach((item) => item.dispose());
       else mesh.material?.dispose();
     });
+    grass.dispose();
     renderer.dispose();
   };
   window.addEventListener('pagehide', cleanup);
