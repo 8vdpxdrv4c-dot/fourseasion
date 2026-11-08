@@ -317,14 +317,15 @@ export function createFoliage(quality: FoliageQuality): Foliage {
     };
   });
 
-  const bladeHeight = 0.5;
-  const grassGeo = new PlaneGeometry(0.075, bladeHeight, 1, 4);
+  const bladeHeight = 0.46;
+  const grassGeo = new PlaneGeometry(0.052, bladeHeight, 1, 5);
   const bladePos = grassGeo.getAttribute('position');
   for (let i = 0; i < bladePos.count; i += 1) {
     const y = bladePos.getY(i) + bladeHeight * 0.5;
     const along = Math.min(1, Math.max(0, y / bladeHeight));
-    bladePos.setX(i, bladePos.getX(i) * (1 - along * 0.78));
-    bladePos.setZ(i, along * along * 0.07);
+    const curve = along * along * (0.55 + along * 0.45);
+    bladePos.setX(i, bladePos.getX(i) * (1 - along * 0.9));
+    bladePos.setZ(i, curve * 0.13);
   }
   grassGeo.translate(0, bladeHeight * 0.5, 0);
   grassGeo.computeVertexNormals();
@@ -355,21 +356,21 @@ export function createFoliage(quality: FoliageQuality): Foliage {
   let guard = 0;
   while (placed < quality.grass && guard < quality.grass * 18) {
     guard += 1;
-    const rad = Math.sqrt(rng()) * 4.45;
+    const rad = Math.sqrt(rng()) * 4.58;
     const ang = rng() * TAU;
     const x = Math.sin(ang) * rad;
     const z = -Math.cos(ang) * rad;
     if (rad < 0.55) continue;
     if (exclusions.some((item) => Math.hypot(x - item.x, z - item.z) < item.r)) continue;
     const clump = fieldNoise(x * 1.7, z * 1.7);
-    if (clump < 0.36 && rng() > 0.28) continue;
+    if (clump < 0.22 && rng() > 0.55) continue;
     phases[placed] = rng() * TAU;
-    bends[placed] = 0.62 + rng() * 0.7;
+    bends[placed] = 0.55 + rng() * 0.55;
     dummy.position.set(x, WORLD.surfaceY - 0.012, z);
-    dummy.rotation.set((rng() - 0.5) * 0.35, rng() * TAU, (rng() - 0.5) * 0.28);
-    const lush = 0.45 + clump * 0.85;
-    const height = lush * (0.55 + rng() * 0.7);
-    const width = 0.55 + rng() * 0.7;
+    dummy.rotation.set((rng() - 0.5) * 0.22, rng() * TAU, (rng() - 0.5) * 0.18);
+    const lush = 0.55 + clump * 0.55;
+    const height = lush * (0.42 + rng() * 0.48);
+    const width = 0.48 + rng() * 0.42;
     dummy.scale.set(width, height, 1);
     dummy.updateMatrix();
     grass.setMatrixAt(placed, dummy.matrix);
