@@ -57,7 +57,7 @@ function boot(): void {
   const params = new URLSearchParams(location.search);
   const narrow = window.innerWidth < 840;
   const quality = {
-    grass: narrow ? 700 : 1500,
+    grass: narrow ? 2200 : 5200,
     flowers: narrow ? 16 : 32,
     leaves: narrow ? 14 : 26,
     petals: narrow ? 12 : 22,

@@ -8,12 +8,12 @@ export const sweepUniform = { value: 0 };
 export const timeUniform = { value: 0 };
 
 const palette = {
-  springA: new Color('#6ea83a'),
-  springB: new Color('#c6de78'),
+  springA: new Color('#4a7c28'),
+  springB: new Color('#7eae46'),
   springC: new Color('#f6b9d4'),
-  summerA: new Color('#3d6824'),
-  summerB: new Color('#699544'),
-  summerC: new Color('#f0d056'),
+  summerA: new Color('#245016'),
+  summerB: new Color('#3f6e28'),
+  summerC: new Color('#d7c15a'),
   autumnA: new Color('#7a4216'),
   autumnB: new Color('#bd742f'),
   autumnC: new Color('#e7a15a'),
@@ -217,14 +217,14 @@ hScale = max(hScale, 0.045);
 transformed.y *= hScale;
 float tip = uv.y * uv.y;
 vec2 world = gWorld.xz;
-float gust = sin(uTime * 0.7 + world.x * 0.16 + world.y * 0.13);
-float gust2 = sin(uTime * 0.28 + world.x * 0.06 - world.y * 0.05);
-float flutter = sin(uTime * 2.25 + aPhase + world.x * 1.5);
-float amp = (0.5 + 0.5 * gust2) * (0.12 * wSpring + 0.2 * wSummer + 0.08 * wAutumn + 0.012 * wWinter);
+float gust = sin(uTime * 0.62 + world.x * 0.14 + world.y * 0.11);
+float gust2 = sin(uTime * 0.24 + world.x * 0.05 - world.y * 0.04);
+float flutter = sin(uTime * 1.7 + aPhase + world.x * 0.9);
+float amp = (0.62 + 0.38 * gust2) * (0.1 * wSpring + 0.16 * wSummer + 0.07 * wAutumn + 0.01 * wWinter);
 float bend = max(aBend, 0.35);
-transformed.x += (gust * 0.7 + flutter * 0.3) * tip * amp * bend;
-transformed.z += (gust2 * 0.62 + cos(uTime * 1.7 + aPhase) * 0.28) * tip * amp * bend;
-transformed.z += tip * 0.045 * bend;
+transformed.x += (gust * 0.78 + flutter * 0.16) * tip * amp * bend;
+transformed.z += (gust2 * 0.7 + cos(uTime * 1.35 + aPhase) * 0.16) * tip * amp * bend;
+transformed.z += tip * 0.06 * bend;
 #ifdef USE_INSTANCING
   vSeasonWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 #else
@@ -239,15 +239,23 @@ diffuseColor.rgb *= terrainColor(vSeasonWorld.xz);
 
 const GRASS_FRAG = /* glsl */ `
 #include <color_fragment>
-float along = pow(max(vBladeUv.y, 0.0), 0.72);
-float halfW = mix(0.48, 0.035, along);
+float along = pow(max(vBladeUv.y, 0.0), 0.65);
+float halfW = mix(0.5, 0.16, along);
 if (abs(vBladeUv.x - 0.5) > halfW) discard;
 gSnow = 0.0;
 gSparkle = 0.0;
+float wSpring = seasonWeightIndex(vSeasonWorld.xz, 0.0);
+float wSummer = seasonWeightIndex(vSeasonWorld.xz, 1.0);
+float wAutumn = seasonWeightIndex(vSeasonWorld.xz, 2.0);
+float wWinter = seasonWeightIndex(vSeasonWorld.xz, 3.0);
 vec3 meadow = grassColor(vSeasonWorld.xz, vBladeUv.y);
-vec3 root = meadow * vec3(0.38, 0.42, 0.24);
-vec3 tip = meadow * vec3(1.18, 1.24, 0.78);
-diffuseColor.rgb *= mix(root, tip, along);
+float tone = 0.78 + 0.34 * seasonNoise(vSeasonWorld.xz * 3.4 + 1.7);
+vec3 deep = mix(vec3(0.035, 0.14, 0.04), vec3(0.18, 0.42, 0.1), along) * tone;
+float lush = wSpring * 0.62 + wSummer * 0.78;
+vec3 graded = mix(meadow, deep, lush);
+graded = mix(graded, meadow, wAutumn * 0.45);
+graded += vec3(0.07, 0.12, 0.025) * along * along * (1.0 - wWinter);
+diffuseColor.rgb *= graded;
 `;
 
 const ROUGH_FRAG = /* glsl */ `
@@ -283,7 +291,7 @@ export function bindTerrain(material: MeshStandardMaterial): void {
       .replace('#include <roughnessmap_fragment>', ROUGH_FRAG)
       .replace('#include <emissivemap_fragment>', EMISSIVE_FRAG);
   };
-  material.customProgramCacheKey = () => 'season-terrain-v5';
+  material.customProgramCacheKey = () => 'season-terrain-v6';
 }
 
 export function bindGrass(material: MeshStandardMaterial): void {
@@ -304,7 +312,7 @@ export function bindGrass(material: MeshStandardMaterial): void {
       .replace('#include <roughnessmap_fragment>', ROUGH_FRAG)
       .replace('#include <emissivemap_fragment>', EMISSIVE_FRAG);
   };
-  material.customProgramCacheKey = () => 'season-grass-v5';
+  material.customProgramCacheKey = () => 'season-grass-v6';
 }
 
 export function bindTreeWind(material: MeshStandardMaterial): void {
