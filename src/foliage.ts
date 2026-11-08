@@ -117,10 +117,12 @@ function card(
   rotY: number,
   rotX: number,
   color: Color,
+  scale = 1,
 ): void {
   const matrix = new Matrix4()
     .makeRotationX(rotX)
     .multiply(new Matrix4().makeRotationY(rotY))
+    .scale(new Vector3(scale, scale, scale))
     .setPosition(x, y, z);
   parts.push(part(geo, matrix, color, 0.08));
 }
@@ -194,7 +196,7 @@ function buildTree(kind: number, seed: number, detail: number): BufferGeometry {
     }
     const bare = kind === 2 && i % 2 === 0;
     if (!bare) {
-      const puff = kind === 1 ? 0.34 + rng() * 0.12 : 0.22 + rng() * 0.1;
+      const puff = kind === 1 ? 0.48 + rng() * 0.16 : 0.22 + rng() * 0.1;
       cluster(parts, tip.x, tip.y + 0.04, tip.z, puff, colors[i % colors.length]!);
       if (rich) {
         cluster(
@@ -219,6 +221,7 @@ function buildTree(kind: number, seed: number, detail: number): BufferGeometry {
         rng() * TAU,
         -0.6 - rng() * 0.8,
         colors[(i + c) % colors.length]!,
+        kind === 1 ? 1.4 : 1,
       );
     }
   }
